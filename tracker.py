@@ -158,3 +158,27 @@ def query_games():
 
     # return the number of games and the list of tuples
     return f"{num_games}: [{' | '.join(game_list)}]"
+
+
+# function to start the tracker server on a port
+def start_tracker_server(port):
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind(("", port))
+    server_socket.listen()
+
+    print(f"Tracker server listening on port {port}")
+
+    while True:
+        conn, addr = server_socket.accept()
+        threading.Thread(target=handle_player, args=(conn, addr)).start()
+
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) != 2:
+        print("Usage: python tracker.py <port>")
+        sys.exit(1)
+
+    port = int(sys.argv[1])
+    # within 11500-11999
+    start_tracker_server(port)
