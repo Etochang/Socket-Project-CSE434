@@ -60,6 +60,9 @@ def process_message(message):
         else:
             return "FAILURE: Invalid query command format. Usage: query games"
 
+    else:
+        return "FAILURE: Invalid command"
+
 
 # function to register a new player
 def register_player(player_name, ip_address, t_port, p_port):
