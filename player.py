@@ -263,15 +263,6 @@ def push_updates_to_players(player_details, game_state):
         except Exception as e:
             print(f"Error sending game state to {player[0]} at {ip}:{p}: {e}")
 
-def receive_update_from_player(dealer_socket):
-    try:
-        conn, addr = dealer_socket.accept()
-        game_state_str = conn.recv(BUFFER_SIZE).decode()
-        game_state = json.loads(game_state_str)
-        return game_state
-    except Exception as e:
-        print(f"Error receiving update from player: {e}")
-        return None
 
 def update_local_game_state(game_state):
     global player_hands, stock, discard, scores, current_turn
