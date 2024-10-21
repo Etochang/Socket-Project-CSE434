@@ -44,7 +44,7 @@ def send_message(client_socket, message):
 
 
 # function to listen for messages from other players via their p_port
-def listen_for_messages(ip_address, p_port, player_details, my_index):
+def listen_for_messages(ip_address, p_port):
     try:
         # create a TCP socket
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -63,17 +63,27 @@ def listen_for_messages(ip_address, p_port, player_details, my_index):
 
             # parse the message
             if message.startswith("Hello from player"):
-                # notify the next player in the ring
-                left_player_index = (my_index - 1) % len(player_details)
-                left_player = player_details[left_player_index]
+                try:
+                    parts = message.split(";", 2)
+                    if len(parts) == 3:
+                        greeting, player_details_str, my_index_str = parts
+                        # parse the player details and index
+                        player_details = eval(player_details_str)
+                        my_index = int(my_index_str)
 
-                # identify dealer, left, and right players
-                player_neighbors["dealer"] = player_details[0]
-                player_neighbors["left"] = player_details[left_player_index]
+                        left_player_index = (my_index - 1) % len(player_details)
 
-                # send the message to the next player in the ring
-                notify_next_player(player_details, my_index)
+                        # identify dealer, left, and right players
+                        player_neighbors["dealer"] = player_details[0]
+                        player_neighbors["left"] = player_details[left_player_index]
 
+                        # send the message to the next player in the ring
+                        if player_neighbors["right"] is None:
+                            notify_next_player(player_details, my_index)
+                    else:
+                        print("Invalid message format")
+                except Exception as e:
+                    print(f"Failed to parse player details: {e}")
             conn.close()
     except Exception as e:
         print(f"Error: {e}")
@@ -95,7 +105,7 @@ def notify_next_player(player_details, my_index):
         # create socket to connect to next player in the ring
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((next_ip, next_p))
-            s.send(f"Hello from player {player_details[my_index][0]} at {player_details[my_index][1]}:{player_details[my_index][2]}".encode())
+            s.send(f"Hello from player {player_details[my_index][0]} at {player_details[my_index][1]}:{player_details[my_index][2]};{player_details};{next_index}".encode())
 
             # set right player in dictionary
             player_neighbors["right"] = next_player
@@ -122,7 +132,8 @@ def handle_user_input(client_socket):
                     print("Starting game...")
                     for i, player in enumerate(response):
                         print(f" {player[0]}:{player[1]}:{player[2]}")
-                        notify_next_player(response, i)
+                    # get next player to notify others
+                    notify_next_player(response, 0)
                 else:
                     print(response)
             else:

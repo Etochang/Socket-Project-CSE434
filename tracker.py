@@ -196,7 +196,7 @@ def start_game(dealer, n, holes=9):
     
     # Store the game information
     games[game_id] = {
-        "dealer": dealer,
+        "dealer": (dealer, players[dealer][0], players[dealer][2]),
         "players": [(player, players[player][0], players[player][2]) for player in selected_players]
     }
     
