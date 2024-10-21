@@ -11,13 +11,18 @@ BUFFER_SIZE = 1024
 player_neighbors = {
     "dealer": None,
     "left": None,
-    "right": None
+    "right": None,
+    "self": None
 }
 
-# store game state
+# Global game state variables
 player_hands = {}
 stock = []
 discard = []
+scores = {}
+current_turn = None
+round_number = 1
+round_end = False
 
 # Game logic functions
 
@@ -128,6 +133,43 @@ def swap_card(player_hand, card, pile):
 def check_round_end(player_hand):
     return all(card[0] != '***' for card in player_hand)
 
+def end_round_and_start_new(players):
+    global player_hands, stock, discard, scores, current_turn, round_number, round_end
+
+    # Display scores for the current round
+    print("\nRound", round_number, "scores:")
+    for player, score in scores.items():
+        print(f"{player}: {score}")
+
+    # Increment round number and reset round_end flag
+    round_number += 1
+    round_end = False
+
+    # Set up a new deck, shuffle, deal new hands
+    deck = create_deck()
+    shuffle_deck(deck)
+    player_hands = deal_cards(deck, players)
+
+    # Initialize player hands for the new round
+    for player in player_hands:
+        player_hands[player] = initialize_player_hand(player_hands[player])
+
+    # Create new stock and discard piles
+    stock, discard = create_stock_and_discard_piles(deck)
+
+    # Reset the current turn to the player after the dealer
+    current_turn = players[1]
+
+    # Reset scores for the new round
+    scores = {player: 0 for player in players}
+
+    # Serialize and push the new game state to all players
+    game_state = serialize_game_state(player_hands, stock, discard, scores, current_turn, round_number, round_end)
+    push_updates_to_players(players, game_state)
+
+    print("\nStarting new round", round_number)
+
+
 # calculating score
 def calculate_score(player_hand):
     score = 0
@@ -147,91 +189,100 @@ def calculate_score(player_hand):
         'K': 0
     }
 
-    # calculate score considering pairs in columns is 0
-    for i in range (0, 6, 3):
-        if player_hand[i][1][0] == player_hand[i+3][1][0]:
-            continue
-        score += score_map[player_hand[i][1][0]]
-        score += score_map[player_hand[i+3][1][0]]
+    for i in range(3):  # columns are indexed as 0, 1, 2
+        if player_hand[i][1][0] == player_hand[i + 3][1][0]:  # pair in the column
+            continue  #  0
+        else:
+            score += score_map[player_hand[i][1][0]]
+            score += score_map[player_hand[i + 3][1][0]]
 
     return score
 
 # main gameplay loop for player turns, drawing cards, swapping/discarding, and checking for end of round
-def play_round(players, player_hands, stock, discard):
-    current_player_index = (-1) % len(players) # start with player to the left of dealer
+def play_turn(players):
+    global player_hands, stock, discard, scores, current_turn, round_number, round_end
 
-    while True:
-        current_player = players[current_player_index]
-        print(f"{current_player}'s turn:")
+    current_player = current_turn
+    print(f"{current_player}'s turn:")
 
-        card, pile = draw_card(stock, discard)
-        if card is None:
-            continue
+    # Display player hands
+    display_player_hands(player_hands)
 
-        # attempt to swap
-        swapped = swap_card(player_hands[current_player], card, pile)
-        if not swapped:
-            continue
+    # Draw a card
+    card, pile = draw_card(stock, discard)
+    if card is None:
+        return True  # Continue the round if no valid card was drawn
 
-        # check if round is over
-        if check_round_end(player_hands[current_player]):
-            print(f"{current_player} has ended the round.")
-            break
+    # Attempt to swap the card
+    swapped = swap_card(player_hands[current_player], card, pile)
+    if not swapped:
+        return True  # Continue the round if the swap was unsuccessful
 
-        # next player
-        current_player_index = (current_player_index - 1) % len(players)
+    # Check if the current player has ended the round
+    if check_round_end(player_hands[current_player]):
+        print(f"{current_player} has ended the round.")
+        round_end = True
+        return False  # End the round
 
-    # calculate scores
+    # Calculate scores for the current state
     scores = {player: calculate_score(hand) for player, hand in player_hands.items()}
-    return scores
+
+    # Move to the next player
+    current_index = players.index(current_turn)
+    current_turn = players[(current_index + 1) % len(players)]
+
+    # Serialize the updated game state
+    game_state = serialize_game_state(player_hands, stock, discard, scores, current_turn, round_number, round_end)
+
+    # Push the updated game state to all players
+    push_updates_to_players(players, game_state)
+
+    return True  # Continue the round
 
 # serialization function for game state
-def serialize_game_state(player_hands, stock, discard):
+def serialize_game_state(player_hands, stock, discard, scores, current_turn, round_number, round_end):
     state = {
         "player_hands": player_hands,
         "stock": stock,
-        "discard": discard
+        "discard": discard,
+        "scores": scores,
+        "current_turn": current_turn,
+        "round_number": round_number,
+        "round_end": round_end
     }
     return json.dumps(state)
-
-def send_game_state_to_players(player_details, game_state):
+def push_updates_to_players(player_details, game_state):
+    game_state_message = f"GameStateUpdate:{game_state}"
     for i, player in enumerate(player_details):
-        if i == 0:
-            continue
         ip, p = player[1], player[2]
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.connect((ip, p))
-                s.sendall(game_state.encode())
+                s.sendall(game_state_message.encode())
                 print(f"Sent game state to {player[0]} at {ip}:{p}.")
         except Exception as e:
             print(f"Error sending game state to {player[0]} at {ip}:{p}: {e}")
 
-def send_game_state_to_dealer(player_details, game_state):
-    ip, p = player_details[0][1], player_details[0][2]
+def receive_update_from_player(dealer_socket):
     try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.connect((ip, p))
-            s.sendall(game_state.encode())
-            print(f"Sent game state to dealer at {ip}:{p}.")
-    except Exception as e:
-        print(f"Error sending game state to dealer at {ip}:{p}: {e}")
-
-def receive_game_state(conn):
-    try:
+        conn, addr = dealer_socket.accept()
         game_state_str = conn.recv(BUFFER_SIZE).decode()
         game_state = json.loads(game_state_str)
         return game_state
     except Exception as e:
-        print(f"Error receiving game state: {e}")
+        print(f"Error receiving update from player: {e}")
         return None
 
 def update_local_game_state(game_state):
-    global player_hands, stock, discard
+    global player_hands, stock, discard, scores, current_turn
     player_hands = game_state["player_hands"]
     stock = game_state["stock"]
     discard = game_state["discard"]
+    scores = game_state["scores"]
+    current_turn = game_state["current_turn"]
     print("Updated local game state")
+    print("Current scores:", scores)
+    print("Next turn:", current_turn)
 
 # function to send a message to the tracker server
 def send_message(client_socket, message):
@@ -266,6 +317,7 @@ def send_message(client_socket, message):
 
 # function to listen for messages from other players via their p_port
 def listen_for_messages(ip_address, p_port):
+    global player_neighbors, round_end
     try:
         # create a TCP socket
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -297,6 +349,7 @@ def listen_for_messages(ip_address, p_port):
                         # identify dealer, left, and right players
                         player_neighbors["dealer"] = player_details[0]
                         player_neighbors["left"] = player_details[left_player_index]
+                        player_neighbors["self"] = player_details[my_index]
 
                         # send the message to the next player in the ring
                         if player_neighbors["right"] is None:
@@ -305,6 +358,19 @@ def listen_for_messages(ip_address, p_port):
                         print("Invalid message format")
                 except Exception as e:
                     print(f"Failed to parse player details: {e}")
+            elif message.startswith("GameStateUpdate:"):
+                game_state_str = message.split(":", 1)[1]
+                game_state = json.loads(game_state_str)
+                update_local_game_state(game_state)
+
+                # check if it is this process's turn
+                if current_turn == player_neighbors["self"][0]:
+                    if not round_end:
+                        players = list(player_hands.keys())
+                        play_turn(players)
+                    else:
+                        players = list(player_hands.keys())
+                        end_round_and_start_new(players)
             conn.close()
     except Exception as e:
         print(f"Error: {e}")
@@ -337,6 +403,7 @@ def notify_next_player(player_details, my_index):
 
 
 def handle_user_input(client_socket):
+    global player_hands, stock, discard, scores, current_turn, round_number, round_end
     while True:
         command = input("> ")
         if command == 'exit':
@@ -354,18 +421,21 @@ def handle_user_input(client_socket):
                     for i, player in enumerate(response):
                         print(f" {player[0]}:{player[1]}:{player[2]}")
 
+                    #get next player to notify others
+                    notify_next_player(response, 0)
+
                     # set up game variables
                     players = [player[0] for player in response]
                     player_hands, stock, discard = setup_game(players)
+                    scores = {player: 0 for player in players}
+                    current_turn = players[1]
+                    round_number = 1
+                    round_end = False
 
-                    # print initial game variables
-                    print("Initial player hands:")
-                    display_player_hands(player_hands)
-                    print("\nStock pile size:", len(stock))
-                    print("Top card in discard pile:", discard[-1])
-
-                    #get next player to notify others
-                    notify_next_player(response, 0)
+                    # send game state
+                    game_state = serialize_game_state(player_hands, stock, discard, scores, current_turn, round_number,
+                                                      round_end)
+                    push_updates_to_players(response, game_state)
                 else:
                     print(response)
             else:
