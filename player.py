@@ -5,6 +5,13 @@ import threading
 # global buffer size, same as tracker.py
 BUFFER_SIZE = 1024
 
+# Store player relationships (dealer, left, right) for each player
+player_neighbors = {
+    "dealer": None,
+    "left": None,
+    "right": None
+}
+
 # function to send a message to the tracker server
 def send_message(client_socket, message):
     try:
@@ -37,7 +44,7 @@ def send_message(client_socket, message):
 
 
 # function to listen for messages from other players via their p_port
-def listen_for_messages(ip_address, p_port):
+def listen_for_messages(ip_address, p_port, player_details, my_index):
     try:
         # create a TCP socket
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -53,6 +60,20 @@ def listen_for_messages(ip_address, p_port):
             # receive the message
             message = conn.recv(BUFFER_SIZE).decode()
             print(f"Received message from player: {message}")
+
+            # parse the message
+            if message.startswith("Hello from player"):
+                # notify the next player in the ring
+                left_player_index = (my_index - 1) % len(player_details)
+                left_player = player_details[left_player_index]
+
+                # identify dealer, left, and right players
+                player_neighbors["dealer"] = player_details[0]
+                player_neighbors["left"] = player_details[left_player_index]
+
+                # send the message to the next player in the ring
+                notify_next_player(player_details, my_index)
+
             conn.close()
     except Exception as e:
         print(f"Error: {e}")
@@ -75,16 +96,14 @@ def notify_next_player(player_details, my_index):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((next_ip, next_p))
             s.send(f"Hello from player {player_details[my_index][0]} at {player_details[my_index][1]}:{player_details[my_index][2]}".encode())
+
+            # set right player in dictionary
+            player_neighbors["right"] = next_player
+
             print(f"Connected to next player {next_player[0]} at {next_ip}:{next_p}")
     except Exception as e:
         print(f"Failed to connect to next player {next_player[0]} at {next_ip}:{next_p}: {e}")
 
-# Function for each player to start their own listener and notify next player
-def start_listener_and_notify(player_details, my_index):
-    my_ip, my_port = player_details[my_index][1], player_details[my_index][2]
-    print(f"Starting listener thread for player {player_details[my_index][0]} at {my_ip}:{my_port}")
-    start_listener_thread(my_ip, my_port)
-    notify_next_player(player_details, my_index)
 
 def handle_user_input(client_socket):
     while True:
@@ -103,8 +122,7 @@ def handle_user_input(client_socket):
                     print("Starting game...")
                     for i, player in enumerate(response):
                         print(f" {player[0]}:{player[1]}:{player[2]}")
-                        # Each player starts their own listener and notifies the next player
-                        start_listener_and_notify(response, i)
+                        notify_next_player(response, i)
                 else:
                     print(response)
             else:
@@ -114,7 +132,10 @@ def handle_user_input(client_socket):
 
 
 # function to act as a 'player CLI' that can interact with the tracker server continuously
-def player_cli(tracker_ip, tracker_port, t):
+def player_cli(tracker_ip, tracker_port, t, p):
+    # start listener thread immediately for player to player communication
+    start_listener_thread("0.0.0.0", p)
+
     # Create a TCP socket
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # allow sockets to be reused
@@ -154,4 +175,4 @@ if __name__ == "__main__":
     t_port = int(sys.argv[3])
     p_port = int(sys.argv[4])
 
-    player_cli(tracker_ip, tracker_port, t_port)
+    player_cli(tracker_ip, tracker_port, t_port, p_port)
