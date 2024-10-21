@@ -1,3 +1,4 @@
+import random
 import socket
 import sys
 import threading
@@ -11,6 +12,59 @@ player_neighbors = {
     "left": None,
     "right": None
 }
+
+# Game logic functions
+
+# initialize a deck of cards
+def create_deck():
+    suits = ["H", "D", "S", "C"]
+    ranks = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
+    deck = [f"{rank}{suit}" for suit in suits for rank in ranks]
+    return deck
+
+# shuffle the deck
+def shuffle_deck(deck):
+    random.shuffle(deck)
+
+# deal 6 cards to each player, cycling through players
+def deal_cards(deck, players):
+    hands = {player: [] for player in players}
+    for i in range(6):
+        for player in players:
+            hands[player].append(deck.pop(0))
+    return hands
+
+# Randomly turn two cards face up and leave the rest as ***
+def initialize_player_hand(hand):
+    # Make all cards face-down initially
+    hand_status = [('***', card) for card in hand]
+    # Randomly turn two cards face up
+    face_up = random.sample(range(6), 2)
+    for i in face_up:
+        hand_status[i] = (hand[i], hand[i])
+    return hand_status
+
+# set up stock and discard piles
+def create_stock_and_discard_piles(deck):
+    stock = deck[:-1]
+    discard = [deck[-1]]
+    return stock, discard
+
+# set up the game, called by dealer only
+def start_game(players):
+    deck = create_deck()
+    shuffle_deck(deck)
+
+    # deal 6 cards to each player
+    hands = deal_cards(deck, players)
+
+    # initialize player hands
+    for player in hands:
+        hands[player] = initialize_player_hand(hands[player])
+
+    # create stock and discard piles
+    stock, discard = create_stock_and_discard_piles(deck)
+    return hands, stock, discard
 
 # function to send a message to the tracker server
 def send_message(client_socket, message):
