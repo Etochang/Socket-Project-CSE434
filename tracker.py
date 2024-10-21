@@ -201,12 +201,12 @@ def start_game(dealer, n, holes=9):
         "players": [(player, players[player][0], players[player][2]) for player in selected_players]
     }
     
-    # Build the response with dealer and player details
-    dealer_info = f"{dealer} (IP: {players[dealer][0]}, p_port: {players[dealer][2]})"
-    player_info = ', '.join([f"{player} (IP: {players[player][0]}, p_port: {players[player][2]})" for player in selected_players])
+    # Build the response with dealer and player details (player, ip, pport)
+    dealer_info = f"({dealer}, {players[dealer][0]}, {players[dealer][2]})"
+    player_info = ' '.join([f"({player}, {players[player][0]}, {players[player][2]})" for player in selected_players])
     
     # return a success message
-    return f"SUCCESS: Game {game_id}: Dealer={dealer_info}, Players=[{player_info}]"
+    return f"SUCCESS: Game {game_id}: Dealer={dealer_info} | Players={player_info}"
 
 
 # function to query games

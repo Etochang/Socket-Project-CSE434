@@ -6,24 +6,31 @@ import threading
 BUFFER_SIZE = 1024
 
 # function to send a message to the tracker server
-def send_message(tracker_ip, tracker_port, message):
+def send_message(client_socket, message):
     try:
-        # create a TCP socket
-        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-        # connect to the tracker server
-        client_socket.connect((tracker_ip, tracker_port))
-
         # send the message
         client_socket.send(message.encode())
-
         # receive the response
         response = client_socket.recv(BUFFER_SIZE).decode()
         print(f"Tracker server response: {response}")
+        # parse the response if it's a start game response
+        if "SUCCESS: Game" in response:
+            game_info = response.split(":")[2].strip()
+            parts = game_info.split(" | ")
+            dealer_info = parts[0][8:-1].strip()
+            players_info = parts[1].strip()[9:-1].split(") (")
 
-        # close the socket
-        client_socket.close()
+            player_details = []
+            # dealer details
+            dealer, ip, p = dealer_info.split(", ")
+            player_details.append((dealer, ip, int(p)))
 
+            # player details
+            for player in players_info:
+                player_name, ip, p = player.split(", ")
+                player_details.append((player_name, ip, int(p)))
+
+            return player_details
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)
@@ -52,14 +59,14 @@ def listen_for_messages(ip_address, p_port):
 
 
 # function to start a listener thread for a specific p_port
-def start_listener_thread(ip_address, p_port):
-    listener_thread = threading.Thread(target=listen_for_messages, args=(ip_address, p_port))
+def start_listener_thread(ip_address, p):
+    listener_thread = threading.Thread(target=listen_for_messages, args=(ip_address, p))
     listener_thread.daemon = True # terminate the thread when the main thread terminates
     listener_thread.start()
 
 
 # function to act as a 'player CLI' that can interact with the tracker server continuously
-def player_cli(tracker_ip, tracker_port):
+def player_cli(tracker_ip, tracker_port, t):
     print("Welcome to the player CLI!")
     print("Available commands:")
     print("  register <player_name> <ip_address> <t_port> <p_port>")
@@ -67,8 +74,16 @@ def player_cli(tracker_ip, tracker_port):
     print("  query players")
     print("  query games")
     print("  start game <dealer_name> <n> <#holes>")
-
     print("Enter 'exit' to quit.")
+
+    # Create a TCP socket
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    # Bind the socket to the IP address and port
+    client_socket.bind(("", t))
+
+    # Connect to the tracker server
+    client_socket.connect((tracker_ip, tracker_port))
 
     while True:
         command = input("> ")
@@ -82,25 +97,25 @@ def player_cli(tracker_ip, tracker_port):
         # threads need to be initialized
         if command.startswith("start game"):
             parts = command.split()
-            if len(parts) != 5:
+            if len(parts) != 5 or len(parts) != 4:
                 print("Invalid start game command. Usage: start game <dealer_name> <n> <#holes>")
             else:
-                n = int(parts[3])
-                response = send_message(tracker_ip, tracker_port, command)
-                if "SUCCESS" in response:
-                    break
-                    # create a thread for each user
-                    # 1. extract player IPs and ports for the n players in the response
-                    # 2. create a thread for each player
-                    # i.e., player_details = [(ip1, port1), (ip2, port2), ...]
-                    # for ip, port in player_details:
-                    #     start_listener_thread(ip, port)
+                # send the command to the tracker server
+                response = send_message(client_socket, command)
+                if isinstance(response, list):
+                    print(f"Game started successfully. Player details:")
+                    for player in response:
+                        print(f"  {player[0]}:{player[1]}:{player[2]}")
+                        start_listener_thread(player[1], player[2])
+                else:
+                    print(response)
         else:
-            send_message(tracker_ip, tracker_port, command)
+            send_message(client_socket, command)
+    client_socket.close()
 
 
 if __name__ == "__main__":
-    # check if the correct number of arguments are passed
+    # check if the correct number of arguments is passed
     if len(sys.argv) != 5:
         print("Usage: python player.py <tracker_ip> <tracker_port> <t_port> <p_port>")
         sys.exit(1)
@@ -110,4 +125,4 @@ if __name__ == "__main__":
     t_port = int(sys.argv[3])
     p_port = int(sys.argv[4])
 
-    player_cli(tracker_ip, tracker_port)
+    player_cli(tracker_ip, tracker_port, t_port)
