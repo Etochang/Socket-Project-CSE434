@@ -1,3 +1,4 @@
+import random
 import socket
 import threading
 
@@ -10,8 +11,21 @@ game_tracker = 0
 # random global buffer size
 BUFFER_SIZE = 1024
 
-# function to handle incoming messages from players
 def handle_player(conn, addr):
+    """
+    Handles incoming messages from a player.
+
+    This function is responsible for receiving and processing messages from a connected player.
+    It continuously listens for incoming messages, processes them using the process_message function,
+    and sends the response back to the player.
+
+    Args:
+        conn (socket): The socket connection to the player.
+        addr (tuple): The IP address and port number of the player.
+
+    Returns:
+        None
+    """
     print(f"Connected to player: {addr}")
 
     while True:
@@ -29,9 +43,17 @@ def handle_player(conn, addr):
     print(f"Disconnected from player: {addr}")
     conn.close()
 
-
 # function to process the incoming messages and execute corresponding commands
 def process_message(message):
+    """
+    Processes an incoming message from a player.
+
+    Args:
+        message (str): The message to process.
+
+    Returns:
+        str: The response to the message after server-side execution.
+    """
     parts = message.split()
     # the first word is the command, rest are arguments
     command = parts[0]
@@ -41,31 +63,46 @@ def process_message(message):
             return register_player(parts[1], parts[2], parts[3], parts[4])
         else:
             return "FAILURE: Invalid register command format. Usage: register <player_name> <ip_address> <t_port> <p_port>"
-
     elif command == "deregister":
         if len(parts) == 2:
             return deregister_player(parts[1])
         else:
             return "FAILURE: Invalid deregister command format. Usage: deregister <player_name>"
-
     elif command == "query" and parts[1] == "players":
         if len(parts) == 2:
             return query_players()
         else:
             return "FAILURE: Invalid query command format. Usage: query players"
-
     elif command == "query" and parts[1] == "games":
         if len(parts) == 2:
             return query_games()
         else:
             return "FAILURE: Invalid query command format. Usage: query games"
-
+    elif command == 'start' and parts[1] == 'game':
+        if len(parts) == 4:
+            return start_game(parts[2], int(parts[3]))
+        elif len(parts) == 5:
+            return start_game(parts[2], int(parts[3]), int(parts[4]))
+        else:
+            return "FAILURE: Invalid start game command. Usage: start game <dealer_name> <n> <#holes>"
     else:
         return "FAILURE: Invalid command"
 
 
 # function to register a new player
 def register_player(player_name, ip_address, t_port, p_port):
+    """
+    Registers a new player with the tracker server.
+
+    Args:
+        player_name (str): The name of the player to register.
+        ip_address (str): The IP address of the player.
+        t_port (str): The TCP port number of the player.
+        p_port (str): The port number used by the player for communication.
+
+    Returns:
+        str: A success or failure message indicating whether the player was registered successfully.
+    """
     if player_name in players:
         return "FAILURE: Player already registered"
     else:
@@ -75,6 +112,15 @@ def register_player(player_name, ip_address, t_port, p_port):
 
 # function to deregister a player
 def deregister_player(player_name):
+    """
+    Deregisters a player from the tracker server.
+
+    Args:
+        player_name (str): The name of the player to deregister.
+
+    Returns:
+        str: A success or failure message indicating whether the player was deregistered successfully.
+    """
     if player_name in players and players[player_name][3] == "free":
         del players[player_name]
         return "SUCCESS: Player deregistered"
@@ -84,6 +130,13 @@ def deregister_player(player_name):
 
 # function to query players
 def query_players():
+    """
+    Query the registered players.
+
+    Returns:
+        str: A formatted string representing the number of players and their details.
+             Format: "<num_players>: [(player_name, ip_address, t_port, p_port, state), ...]"
+    """
     num_players = len(players)
 
     # return 0 and an empty list if no players are registered
@@ -100,9 +153,20 @@ def query_players():
     return f"{num_players}: [{', '.join(player_list)}]"
 
 
-# placeholder start game function to help with prototyping query_games
-"""
-def start_game(dealer, n, #holes):
+def start_game(dealer, n, holes=9):
+    """
+    Starts a new game.
+
+    Args:
+        dealer (str): The name of the dealer who starts the game.
+        n (int): The number of players to play the game.
+        holes (int, optional): The number of holes to play. Defaults to 9.
+
+    Returns:
+        str: A success or failure message indicating whether the game was started successfully.
+             Format: "SUCCESS: Game <game_id>: Dealer=<dealer_info>, Players=[<player_info>]"
+    """
+    global game_tracker
     if dealer not in players:
         return "FAILURE: Dealer not registered"
         
@@ -112,11 +176,11 @@ def start_game(dealer, n, #holes):
     if n < 1 or n > 3:
         return "FAILURE: Invalid number of players"
         
-    free_players = [p for p in players if players[p][3] == 'free' and p != dealer_name]
+    free_players = [p for p in players if players[p][3] == 'free' and p != dealer]
     if len(free_players) < n:
         return f"FAILURE: Not enough available players. Only {len(free_players)} free players."
     
-    if #holes < 1 or #holes > 9:
+    if holes < 1 or holes > 9:
         return "FAILURE: Invalid number of holes"
         
     # select n free players for the game
@@ -127,23 +191,23 @@ def start_game(dealer, n, #holes):
     game_tracker += 1
     
     # Update the states of the dealer and selected players to "in-play"
-    players[dealer_name] = (*players[dealer_name][:3], 'in-play')
+    players[dealer] = (*players[dealer][:3], 'in-play')
     for player in selected_players:
         players[player] = (*players[player][:3], 'in-play')
     
     # Store the game information
     games[game_id] = {
-        "dealer": dealer_name,
+        "dealer": dealer,
         "players": [(player, players[player][0], players[player][2]) for player in selected_players]
     }
     
     # Build the response with dealer and player details
-    dealer_info = f"{dealer_name} (IP: {players[dealer_name][0]}, p-port: {players[dealer_name][2]})"
-    player_info = ', '.join([f"{player} (IP: {players[player][0]}, p-port: {players[player][2]})" for player in selected_players])
+    dealer_info = f"{dealer} (IP: {players[dealer][0]}, p_port: {players[dealer][2]})"
+    player_info = ', '.join([f"{player} (IP: {players[player][0]}, p_port: {players[player][2]})" for player in selected_players])
     
-    # return success message
+    # return a success message
     return f"SUCCESS: Game {game_id}: Dealer={dealer_info}, Players=[{player_info}]"
-"""
+
 
 # function to query games
 def query_games():

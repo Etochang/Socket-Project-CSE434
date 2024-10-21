@@ -66,6 +66,7 @@ def player_cli(tracker_ip, tracker_port):
     print("  deregister <player_name>")
     print("  query players")
     print("  query games")
+    print("  start game <dealer_name> <n> <#holes>")
 
     print("Enter 'exit' to quit.")
 
