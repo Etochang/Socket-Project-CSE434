@@ -1,3 +1,3 @@
 # Socket Project
 
-TODO
+*This is the socket project repo*
