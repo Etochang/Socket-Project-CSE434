@@ -79,17 +79,21 @@ def notify_next_player(player_details, my_index):
     except Exception as e:
         print(f"Failed to connect to next player {next_player[0]} at {next_ip}:{next_p}: {e}")
 
+# Function for each player to start their own listener and notify next player
+def start_listener_and_notify(player_details, my_index):
+    my_ip, my_port = player_details[my_index][1], player_details[my_index][2]
+    print(f"Starting listener thread for player {player_details[my_index][0]} at {my_ip}:{my_port}")
+    start_listener_thread(my_ip, my_port)
+    notify_next_player(player_details, my_index)
+
 # function to act as a 'player CLI' that can interact with the tracker server continuously
 def player_cli(tracker_ip, tracker_port, t):
     # Create a TCP socket
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
     # allow sockets to be reused
     client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
     # Bind the socket to the IP address and port
     client_socket.bind(("", t))
-
     # Connect to the tracker server
     client_socket.connect((tracker_ip, tracker_port))
 
@@ -120,14 +124,10 @@ def player_cli(tracker_ip, tracker_port, t):
                     response = send_message(client_socket, command)
                     if isinstance(response, list):
                         print(f"Game started successfully. Player details:")
-                        for player in response:
-                            print(f"  {player[0]}:{player[1]}:{player[2]}")
-                            # start a listener thread for each player
-                            start_listener_thread(player[1], player[2])
-
-                        # once the threads are started, notify the next player in the ring
                         for i, player in enumerate(response):
-                            notify_next_player(response, i)
+                            print(f" {player[0]}:{player[1]}:{player[2]}")
+                            # Each player starts their own listener and notifies the next player
+                            start_listener_and_notify(response, i)
                     else:
                         print(response)
                 else:
