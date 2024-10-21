@@ -1,3 +1,4 @@
+import json
 import random
 import socket
 import sys
@@ -12,6 +13,11 @@ player_neighbors = {
     "left": None,
     "right": None
 }
+
+# store game state
+player_hands = {}
+stock = []
+discard = []
 
 # Game logic functions
 
@@ -69,7 +75,7 @@ def setup_game(players):
 # function to display player hands
 def display_player_hand(player_name, player_hand):
     row_width = 3*3 + 2
-    print(player_name.center(row_width))
+    print("\n" + player_name.center(row_width))
 
     # Split hand into two rows of three
     top_row = ' '.join([card[0].center(3) for card in player_hand[:3]])
@@ -83,6 +89,149 @@ def display_player_hands(player_hands):
     for player, hand in player_hands.items():
         display_player_hand(player, hand)
 
+# function to draw a card
+def draw_card(stock, discard):
+    choice = input("Draw from stock (s) or discard pile (d)? ")
+    if choice == 's' and stock:
+        return stock.pop(0), 'stock'
+    elif choice == 'd' and discard:
+        return discard.pop(), 'discard'
+    else:
+        print("Invalid choice or empty pile.")
+        return None, None
+
+# function to swap a card
+def swap_card(player_hand, card, pile):
+    global stock, discard
+    print("Your current hand:")
+    display_player_hand(player_hand)
+    choice = input("Enter position of card to swap (1-6 from top left to bottom right), or d for discard pile: ").strip().lower()
+    if choice.isdigit() and 1 <= int(choice) <= 6:
+        position = int(choice) - 1
+        olc_card = player_hand[position][1]
+        player_hand[position] = (card, card)
+        if pile == 'stock':
+            stock.insert(0, olc_card)
+        else:
+            discard.append(olc_card)
+        print(f"Swapped {olc_card} with {card} to {pile}.")
+        return True
+    elif choice == 'd':
+        discard.append(card)
+        print(f"Added {card} to discard pile.")
+        return True
+    else:
+        print("Invalid choice.")
+        return False
+
+# check for round end
+def check_round_end(player_hand):
+    return all(card[0] != '***' for card in player_hand)
+
+# calculating score
+def calculate_score(player_hand):
+    score = 0
+    score_map = {
+        'A': 1,
+        '2': -2,
+        '3': 3,
+        '4': 4,
+        '5': 5,
+        '6': 6,
+        '7': 7,
+        '8': 8,
+        '9': 9,
+        '10': 10,
+        'J': 10,
+        'Q': 10,
+        'K': 0
+    }
+
+    # calculate score considering pairs in columns is 0
+    for i in range (0, 6, 3):
+        if player_hand[i][1][0] == player_hand[i+3][1][0]:
+            continue
+        score += score_map[player_hand[i][1][0]]
+        score += score_map[player_hand[i+3][1][0]]
+
+    return score
+
+# main gameplay loop for player turns, drawing cards, swapping/discarding, and checking for end of round
+def play_round(players, player_hands, stock, discard):
+    current_player_index = (-1) % len(players) # start with player to the left of dealer
+
+    while True:
+        current_player = players[current_player_index]
+        print(f"{current_player}'s turn:")
+
+        card, pile = draw_card(stock, discard)
+        if card is None:
+            continue
+
+        # attempt to swap
+        swapped = swap_card(player_hands[current_player], card, pile)
+        if not swapped:
+            continue
+
+        # check if round is over
+        if check_round_end(player_hands[current_player]):
+            print(f"{current_player} has ended the round.")
+            break
+
+        # next player
+        current_player_index = (current_player_index - 1) % len(players)
+
+    # calculate scores
+    scores = {player: calculate_score(hand) for player, hand in player_hands.items()}
+    return scores
+
+# serialization function for game state
+def serialize_game_state(player_hands, stock, discard):
+    state = {
+        "player_hands": player_hands,
+        "stock": stock,
+        "discard": discard
+    }
+    return json.dumps(state)
+
+def send_game_state_to_players(player_details, game_state):
+    for i, player in enumerate(player_details):
+        if i == 0:
+            continue
+        ip, p = player[1], player[2]
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.connect((ip, p))
+                s.sendall(game_state.encode())
+                print(f"Sent game state to {player[0]} at {ip}:{p}.")
+        except Exception as e:
+            print(f"Error sending game state to {player[0]} at {ip}:{p}: {e}")
+
+def send_game_state_to_dealer(player_details, game_state):
+    ip, p = player_details[0][1], player_details[0][2]
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((ip, p))
+            s.sendall(game_state.encode())
+            print(f"Sent game state to dealer at {ip}:{p}.")
+    except Exception as e:
+        print(f"Error sending game state to dealer at {ip}:{p}: {e}")
+
+def receive_game_state(conn):
+    try:
+        game_state_str = conn.recv(BUFFER_SIZE).decode()
+        game_state = json.loads(game_state_str)
+        return game_state
+    except Exception as e:
+        print(f"Error receiving game state: {e}")
+        return None
+
+def update_local_game_state(game_state):
+    global player_hands, stock, discard
+    player_hands = game_state["player_hands"]
+    stock = game_state["stock"]
+    discard = game_state["discard"]
+    print("Updated local game state")
 
 # function to send a message to the tracker server
 def send_message(client_socket, message):
