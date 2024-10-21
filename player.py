@@ -51,7 +51,7 @@ def create_stock_and_discard_piles(deck):
     return stock, discard
 
 # set up the game, called by dealer only
-def start_game(players):
+def setup_game(players):
     deck = create_deck()
     shuffle_deck(deck)
 
@@ -65,6 +65,24 @@ def start_game(players):
     # create stock and discard piles
     stock, discard = create_stock_and_discard_piles(deck)
     return hands, stock, discard
+
+# function to display player hands
+def display_player_hand(player_name, player_hand):
+    row_width = 3*3 + 2
+    print(player_name.center(row_width))
+
+    # Split hand into two rows of three
+    top_row = ' '.join([card[0].center(3) for card in player_hand[:3]])
+    bottom_row = ' '.join([card[0].center(3) for card in player_hand[3:]])
+
+    # Print rows
+    print(top_row)
+    print(bottom_row + '\n')
+
+def display_player_hands(player_hands):
+    for player, hand in player_hands.items():
+        display_player_hand(player, hand)
+
 
 # function to send a message to the tracker server
 def send_message(client_socket, message):
@@ -113,7 +131,7 @@ def listen_for_messages(ip_address, p_port):
             conn, addr = server_socket.accept()
             # receive the message
             message = conn.recv(BUFFER_SIZE).decode()
-            print(f"Received message from player: {message}")
+            print(f"Received message from player: {message}\n")
 
             # parse the message
             if message.startswith("Hello from player"):
@@ -164,7 +182,7 @@ def notify_next_player(player_details, my_index):
             # set right player in dictionary
             player_neighbors["right"] = next_player
 
-            print(f"Connected to next player {next_player[0]} at {next_ip}:{next_p}")
+            print(f"Connected to next player {next_player[0]} at {next_ip}:{next_p}\n")
     except Exception as e:
         print(f"Failed to connect to next player {next_player[0]} at {next_ip}:{next_p}: {e}")
 
@@ -186,7 +204,18 @@ def handle_user_input(client_socket):
                     print("Starting game...")
                     for i, player in enumerate(response):
                         print(f" {player[0]}:{player[1]}:{player[2]}")
-                    # get next player to notify others
+
+                    # set up game variables
+                    players = [player[0] for player in response]
+                    player_hands, stock, discard = setup_game(players)
+
+                    # print initial game variables
+                    print("Initial player hands:")
+                    display_player_hands(player_hands)
+                    print("\nStock pile size:", len(stock))
+                    print("Top card in discard pile:", discard[-1])
+
+                    #get next player to notify others
                     notify_next_player(response, 0)
                 else:
                     print(response)
