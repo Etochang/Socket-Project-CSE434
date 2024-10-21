@@ -86,6 +86,33 @@ def start_listener_and_notify(player_details, my_index):
     start_listener_thread(my_ip, my_port)
     notify_next_player(player_details, my_index)
 
+def handle_user_input(client_socket):
+    while True:
+        command = input("> ")
+        if command == 'exit':
+            print("Goodbye!")
+            break
+        # otherwise, send whatever the player types to the tracker server, special case for start game since
+        # threads need to be initialized
+        if command.startswith("start game"):
+            parts = command.split()
+            if len(parts) == 5 or len(parts) == 4:
+                # send the command to the tracker server
+                response = send_message(client_socket, command)
+                if isinstance(response, list):
+                    print("Starting game...")
+                    for i, player in enumerate(response):
+                        print(f" {player[0]}:{player[1]}:{player[2]}")
+                        # Each player starts their own listener and notifies the next player
+                        start_listener_and_notify(response, i)
+                else:
+                    print(response)
+            else:
+                print("Invalid start game command. Usage: start game <dealer_name> <n> <#holes>")
+        else:
+            send_message(client_socket, command)
+
+
 # function to act as a 'player CLI' that can interact with the tracker server continuously
 def player_cli(tracker_ip, tracker_port, t):
     # Create a TCP socket
@@ -106,38 +133,15 @@ def player_cli(tracker_ip, tracker_port, t):
     print("  start game <dealer_name> <n> <#holes>")
     print("Enter 'exit' to quit.")
 
+    # create separate thread for handling user input so listener can function at the same time
+    input_thread = threading.Thread(target=handle_user_input, args=(client_socket,))
+    input_thread.daemon = True
+    input_thread.start()
+
     try:
-        while True:
-            command = input("> ")
-
-            # exit the player CLI if the user enters 'exit'
-            if command == 'exit':
-                print("Goodbye!")
-                break
-
-            # otherwise, send whatever the player types to the tracker server, special case for start game since
-            # threads need to be initialized
-            if command.startswith("start game"):
-                parts = command.split()
-                if len(parts) == 5 or len(parts) == 4:
-                    # send the command to the tracker server
-                    response = send_message(client_socket, command)
-                    if isinstance(response, list):
-                        print(f"Game started successfully. Player details:")
-                        for i, player in enumerate(response):
-                            print(f" {player[0]}:{player[1]}:{player[2]}")
-                            # Each player starts their own listener and notifies the next player
-                            start_listener_and_notify(response, i)
-                    else:
-                        print(response)
-                else:
-                    print("Invalid start game command. Usage: start game <dealer_name> <n> <#holes>")
-
-            else:
-                send_message(client_socket, command)
+        input_thread.join()
     finally:
         client_socket.close()
-
 
 if __name__ == "__main__":
     # check if the correct number of arguments is passed
