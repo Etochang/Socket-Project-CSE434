@@ -28,20 +28,19 @@ def handle_player(conn, addr):
     """
     print(f"Connected to player: {addr}")
 
-    while True:
-        try:
+    try:
+        while True:
             message = conn.recv(BUFFER_SIZE).decode()
             if not message:
                 break
             print(f"Received message from player: {message}")
             response = process_message(message)
             conn.send(response.encode())
-        except Exception as e:
-            print(f"Error handling player: {e}")
-            break
-
-    print(f"Disconnected from player: {addr}")
-    conn.close()
+    except Exception as e:
+        print(f"Error handling player: {e}")
+    finally:
+        print(f"Disconnected from player: {addr}")
+        conn.close()
 
 # function to process the incoming messages and execute corresponding commands
 def process_message(message):

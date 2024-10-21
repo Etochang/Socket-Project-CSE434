@@ -64,9 +64,35 @@ def start_listener_thread(ip_address, p):
     listener_thread.daemon = True # terminate the thread when the main thread terminates
     listener_thread.start()
 
+# function to set up ring topology
+def notify_next_player(player_details, my_index):
+    next_index = (my_index + 1) % len(player_details)
+    next_player = player_details[next_index]
+    next_ip, next_p = next_player[1], next_player[2]
+
+    try:
+        # create socket to connect to next player in the ring
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((next_ip, next_p))
+            s.send(f"Hello from player {player_details[my_index][0]} at {player_details[my_index][1]}:{player_details[my_index][2]}".encode())
+            print(f"Connected to next player {next_player[0]} at {next_ip}:{next_p}")
+    except Exception as e:
+        print(f"Failed to connect to next player {next_player[0]} at {next_ip}:{next_p}: {e}")
 
 # function to act as a 'player CLI' that can interact with the tracker server continuously
 def player_cli(tracker_ip, tracker_port, t):
+    # Create a TCP socket
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    # allow sockets to be reused
+    client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+    # Bind the socket to the IP address and port
+    client_socket.bind(("", t))
+
+    # Connect to the tracker server
+    client_socket.connect((tracker_ip, tracker_port))
+
     print("Welcome to the player CLI!")
     print("Available commands:")
     print("  register <player_name> <ip_address> <t_port> <p_port>")
@@ -76,42 +102,41 @@ def player_cli(tracker_ip, tracker_port, t):
     print("  start game <dealer_name> <n> <#holes>")
     print("Enter 'exit' to quit.")
 
-    # Create a TCP socket
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        while True:
+            command = input("> ")
 
-    # Bind the socket to the IP address and port
-    client_socket.bind(("", t))
+            # exit the player CLI if the user enters 'exit'
+            if command == 'exit':
+                print("Goodbye!")
+                break
 
-    # Connect to the tracker server
-    client_socket.connect((tracker_ip, tracker_port))
+            # otherwise, send whatever the player types to the tracker server, special case for start game since
+            # threads need to be initialized
+            if command.startswith("start game"):
+                parts = command.split()
+                if len(parts) == 5 or len(parts) == 4:
+                    # send the command to the tracker server
+                    response = send_message(client_socket, command)
+                    if isinstance(response, list):
+                        print(f"Game started successfully. Player details:")
+                        for player in response:
+                            print(f"  {player[0]}:{player[1]}:{player[2]}")
+                            # start a listener thread for each player
+                            start_listener_thread(player[1], player[2])
 
-    while True:
-        command = input("> ")
-
-        # exit the player CLI if the user enters 'exit'
-        if command == 'exit':
-            print("Goodbye!")
-            break
-
-        # otherwise, send whatever the player types to the tracker server, special case for start game since
-        # threads need to be initialized
-        if command.startswith("start game"):
-            parts = command.split()
-            if len(parts) != 5 or len(parts) != 4:
-                print("Invalid start game command. Usage: start game <dealer_name> <n> <#holes>")
-            else:
-                # send the command to the tracker server
-                response = send_message(client_socket, command)
-                if isinstance(response, list):
-                    print(f"Game started successfully. Player details:")
-                    for player in response:
-                        print(f"  {player[0]}:{player[1]}:{player[2]}")
-                        start_listener_thread(player[1], player[2])
+                        # once the threads are started, notify the next player in the ring
+                        for i, player in enumerate(response):
+                            notify_next_player(response, i)
+                    else:
+                        print(response)
                 else:
-                    print(response)
-        else:
-            send_message(client_socket, command)
-    client_socket.close()
+                    print("Invalid start game command. Usage: start game <dealer_name> <n> <#holes>")
+
+            else:
+                send_message(client_socket, command)
+    finally:
+        client_socket.close()
 
 
 if __name__ == "__main__":
